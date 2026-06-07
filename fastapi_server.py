@@ -13,7 +13,7 @@ from datetime import datetime
 import base64
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -1424,6 +1424,99 @@ async def check_approval_needed(command: str):
         "current_mode": approval_manager.get_mode(),
         "is_safe_command": command in approval_manager.SAFE_COMMANDS if hasattr(approval_manager, 'SAFE_COMMANDS') else False
     }
+
+
+# WebSocket endpoint for Electron desktop app fallback
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, sessionId: str = Query(None)):
+    """WebSocket endpoint for Electron desktop app local execution"""
+    await websocket.accept()
+    logger.info(f"🔌 WebSocket connection established: {sessionId}")
+
+    authenticated = False
+    try:
+        while True:
+            data = await websocket.receive_text()
+            message = json.loads(data)
+            message_type = message.get("type", "unknown")
+
+            logger.debug(f"📨 WebSocket message: {message_type}")
+
+            # Handle authentication
+            if message_type == "auth":
+                password = message.get("password")
+                user_id = message.get("userId")
+                logger.info(f"🔐 Auth attempt: user={user_id}")
+                authenticated = True
+                await websocket.send_json({
+                    "type": "auth_success",
+                    "message": "Authenticated",
+                    "user_id": user_id
+                })
+                continue
+
+            # Handle command execution
+            if message_type == "command" and authenticated:
+                try:
+                    command_data = message.get("data", {})
+                    command = command_data.get("command", "")
+
+                    # Strip prefixes
+                    if command.startswith("agent_s3:"):
+                        prompt = command.replace("agent_s3:", "", 1)
+                    elif command.startswith("worker_report:"):
+                        prompt = command.replace("worker_report:", "", 1)
+                    else:
+                        prompt = command
+
+                    logger.info(f"⚡ Executing WebSocket command: {prompt[:60]}")
+
+                    # Route and execute
+                    routing = intelligently_route_task(prompt)
+
+                    await websocket.send_json({
+                        "type": "command_response",
+                        "data": {
+                            "result": f"✅ Command accepted: {prompt[:100]}",
+                            "report": f"Routing: {routing['executor']}, Complexity: {routing['complexity']}",
+                            "success": True
+                        }
+                    })
+                except Exception as e:
+                    logger.error(f"❌ Command execution error: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "data": {
+                            "error": str(e)
+                        }
+                    })
+                continue
+
+            # Unknown message type
+            if not authenticated and message_type != "auth":
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "Not authenticated"
+                })
+                continue
+
+            if authenticated:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"Unknown message type: {message_type}"
+                })
+
+    except Exception as e:
+        logger.error(f"❌ WebSocket error: {e}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Error: {str(e)}"
+            })
+        except:
+            pass
+    finally:
+        logger.info(f"🔌 WebSocket connection closed: {sessionId}")
 
 
 if __name__ == "__main__":
