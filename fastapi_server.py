@@ -141,6 +141,65 @@ async def cache_clear():
         **execution_cache.get_stats()
     }
 
+@app.post("/api/build-app")
+async def build_app(request: OrchestrationRequest):
+    """Build an app - handles app creation requests from desktop agent."""
+    try:
+        logger.info(f"🏗️  Building app: {request.prompt}")
+
+        # Route to appropriate executor
+        routing = intelligently_route_task(request.prompt)
+
+        # Determine app type from prompt
+        app_prompt = request.prompt.lower()
+
+        response_message = f"✅ App building request received: {request.prompt}\n\n"
+        response_message += f"Routing: {routing['executor']}\n"
+        response_message += f"Complexity: {routing['complexity']}\n\n"
+
+        # Basic app building logic
+        if any(word in app_prompt for word in ['web app', 'web application', 'website']):
+            response_message += "🌐 Web App detected\n"
+            response_message += "Steps:\n"
+            response_message += "1. Set up Next.js/React project\n"
+            response_message += "2. Configure Tailwind CSS\n"
+            response_message += "3. Create components\n"
+            response_message += "4. Set up API routes\n"
+        elif any(word in app_prompt for word in ['desktop app', 'electron', 'desktop']):
+            response_message += "🖥️  Desktop App detected\n"
+            response_message += "Steps:\n"
+            response_message += "1. Initialize Electron project\n"
+            response_message += "2. Set up main process\n"
+            response_message += "3. Create renderer UI\n"
+            response_message += "4. Add native modules\n"
+        elif any(word in app_prompt for word in ['mobile app', 'ios', 'android']):
+            response_message += "📱 Mobile App detected\n"
+            response_message += "Steps:\n"
+            response_message += "1. Set up React Native\n"
+            response_message += "2. Create screens\n"
+            response_message += "3. Add navigation\n"
+            response_message += "4. Integrate APIs\n"
+        else:
+            response_message += "🎯 Generic App Setup\n"
+            response_message += "Please specify: web app, desktop app, or mobile app\n"
+
+        return {
+            "status": "success",
+            "action": "build_app",
+            "prompt": request.prompt,
+            "routing": routing,
+            "response": response_message,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ App building failed: {e}")
+        return {
+            "status": "error",
+            "action": "build_app",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
 @app.get("/api/debug")
 async def debug():
     """Debug endpoint for troubleshooting frontend connection."""
@@ -576,13 +635,21 @@ async def execute_task(request: OrchestrationRequest):
         from desktop_executor import desktop_executor
 
         task_id = str(uuid.uuid4())[:8]
-        prompt = request.prompt.lower()
+
+        # FIX: Strip command prefixes from Electron desktop app
+        raw_prompt = request.prompt
+        if raw_prompt.startswith("agent_s3:"):
+            raw_prompt = raw_prompt.replace("agent_s3:", "", 1)
+        elif raw_prompt.startswith("worker_report:"):
+            raw_prompt = raw_prompt.replace("worker_report:", "", 1)
+
+        prompt = raw_prompt.lower()
 
         # QUICK WIN 2: Check if we have cached result for this task type
-        task_type_hash = execution_cache.hash_task_type(request.prompt)
+        task_type_hash = execution_cache.hash_task_type(raw_prompt)
         cached_result = execution_cache.get_result_cache(task_type_hash)
         if cached_result:
-            logger.info(f"💾 Cache hit for task type: {request.prompt[:50]}...")
+            logger.info(f"💾 Cache hit for task type: {raw_prompt[:50]}...")
             return {**cached_result, "task_id": task_id, "cached": True}
         actions = []
         results = []
@@ -705,7 +772,7 @@ async def execute_task(request: OrchestrationRequest):
         }
 
         # QUICK WIN 2: Cache the result for future identical task types
-        task_type_hash = execution_cache.hash_task_type(request.prompt)
+        task_type_hash = execution_cache.hash_task_type(raw_prompt)
         execution_cache.set_result_cache(task_type_hash, response)
 
         return response
