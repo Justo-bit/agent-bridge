@@ -288,6 +288,9 @@ async def set_provider(config: ConfigUpdate):
         # Save to file
         save_api_keys(existing_keys)
 
+        # Refresh the LLM router's provider list
+        llm_router.refresh_providers()
+
         return {
             "message": "API keys configured successfully",
             "providers_configured": list(config.api_keys.keys()),

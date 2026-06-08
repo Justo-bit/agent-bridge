@@ -128,6 +128,13 @@ class UnifiedLLMRouter:
 
         return available
 
+    def refresh_providers(self):
+        """Refresh available providers by re-validating API keys."""
+        self.available_providers = self._validate_keys()
+        logger.info(f"🔄 Providers refreshed: {len(self.available_providers)} available")
+        for p in self.available_providers:
+            logger.info(f"  ✅ {p.name} (Vision: {p.supports_vision})")
+
     def get_provider(self, vision_required: bool = False) -> Optional[ProviderConfig]:
         """Get next available provider, with vision support if required."""
         if not self.available_providers:
