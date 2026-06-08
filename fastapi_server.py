@@ -667,26 +667,40 @@ async def execute_task(request: OrchestrationRequest):
             actions.append("screenshot")
             results.append(screenshot_result)
 
-        # File listing request (triggered by: how many, count, list, show, what files)
-        list_keywords = ['how many', 'count', 'list', 'show', 'what files', 'files in', 'documents in', 'number of']
-        is_listing_request = any(keyword in prompt for keyword in list_keywords)
-        logger.debug(f"🔍 Checking if listing request: {is_listing_request}, prompt='{prompt[:50]}'")
+        # File listing request - multiple ways to phrase it
+        list_keywords = [
+            'how many', 'count', 'list', 'show', 'what files', 'files in', 'documents in', 'number of',
+            'what is in', 'what do i have', 'what\'s in', 'tell me what', 'show me what',
+            'contents of', 'inside my', 'on my desktop', 'on my downloads', 'in my documents'
+        ]
+
+        # Also check for folder references combined with list intent
+        folder_mentions = ['desktop', 'downloads', 'documents', 'folder', 'directory']
+        is_listing_request = (any(keyword in prompt for keyword in list_keywords) or
+                             (any(folder in prompt for folder in folder_mentions) and
+                              any(intent in prompt for intent in ['what', 'show', 'tell', 'list', 'count', 'how', 'contents', 'inside'])))
+        logger.info(f"📁 File listing check: {is_listing_request} | prompt: '{prompt[:60]}'")
 
         if is_listing_request:
             # This is a file listing request, not a download
-            folder_query = prompt
+            folder_query = prompt.lower()
 
-            # Determine which folder to list
-            if 'downloads' in folder_query or 'download folder' in folder_query:
+            # Determine which folder to list based on user mention
+            if 'downloads' in folder_query or 'download folder' in folder_query or 'download' in folder_query:
                 folder_path = '~/Downloads'
+                folder_name = 'Downloads'
             elif 'desktop' in folder_query:
                 folder_path = '~/Desktop'
-            elif 'documents' in folder_query:
+                folder_name = 'Desktop'
+            elif 'documents' in folder_query or 'document' in folder_query:
                 folder_path = '~/Documents'
+                folder_name = 'Documents'
             else:
-                folder_path = '~/Downloads'  # Default to Downloads
+                # If no specific folder mentioned but it's a listing request, default to Desktop
+                folder_path = '~/Desktop'
+                folder_name = 'Desktop'
 
-            logger.info(f"📁 File listing request: {folder_path}")
+            logger.info(f"✅ File listing request: {folder_name} folder | Query: {prompt[:60]}")
             list_result = desktop_executor.list_files(folder_path)
             actions.append("list_files")
             results.append(list_result)
