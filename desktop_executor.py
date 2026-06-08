@@ -278,5 +278,136 @@ class DesktopExecutor:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def list_files(self, folder_path: str = None) -> dict:
+        """List files in a directory with details"""
+        try:
+            # Default to Downloads folder if not specified
+            if not folder_path:
+                folder_path = os.path.join(self.home_dir, "Downloads")
+
+            # Expand home directory if needed
+            folder_path = os.path.expanduser(folder_path)
+
+            # Check if path exists
+            if not os.path.exists(folder_path):
+                return {
+                    "success": False,
+                    "error": f"Folder not found: {folder_path}",
+                    "folder": folder_path
+                }
+
+            # Check if it's a directory
+            if not os.path.isdir(folder_path):
+                return {
+                    "success": False,
+                    "error": f"Not a directory: {folder_path}",
+                    "folder": folder_path
+                }
+
+            # List files
+            files = []
+            total_size = 0
+
+            try:
+                items = os.listdir(folder_path)
+            except PermissionError:
+                return {
+                    "success": False,
+                    "error": f"Permission denied accessing: {folder_path}",
+                    "folder": folder_path
+                }
+
+            # Categorize files
+            documents = []
+            images = []
+            videos = []
+            audio = []
+            archives = []
+            other = []
+
+            doc_extensions = ('.pdf', '.doc', '.docx', '.txt', '.xls', '.xlsx', '.ppt', '.pptx')
+            image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')
+            video_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv')
+            audio_extensions = ('.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a')
+            archive_extensions = ('.zip', '.rar', '.7z', '.tar', '.gz', '.bz2')
+
+            for item in items:
+                item_path = os.path.join(folder_path, item)
+
+                try:
+                    if os.path.isfile(item_path):
+                        file_size = os.path.getsize(item_path)
+                        total_size += file_size
+
+                        # Format file size
+                        if file_size < 1024:
+                            size_str = f"{file_size}B"
+                        elif file_size < 1024*1024:
+                            size_str = f"{file_size/1024:.1f}KB"
+                        else:
+                            size_str = f"{file_size/(1024*1024):.1f}MB"
+
+                        file_info = {
+                            "name": item,
+                            "size": file_size,
+                            "size_readable": size_str,
+                            "extension": os.path.splitext(item)[1].lower()
+                        }
+
+                        # Categorize
+                        ext = os.path.splitext(item)[1].lower()
+                        if ext in doc_extensions:
+                            documents.append(file_info)
+                        elif ext in image_extensions:
+                            images.append(file_info)
+                        elif ext in video_extensions:
+                            videos.append(file_info)
+                        elif ext in audio_extensions:
+                            audio.append(file_info)
+                        elif ext in archive_extensions:
+                            archives.append(file_info)
+                        else:
+                            other.append(file_info)
+                except (OSError, IOError) as e:
+                    logger.warning(f"Could not read file info for {item}: {e}")
+
+            # Format total size
+            if total_size < 1024:
+                total_size_str = f"{total_size}B"
+            elif total_size < 1024*1024:
+                total_size_str = f"{total_size/1024:.1f}KB"
+            else:
+                total_size_str = f"{total_size/(1024*1024):.1f}MB"
+
+            logger.info(f"✅ Listed files in {folder_path}")
+
+            return {
+                "success": True,
+                "folder": folder_path,
+                "summary": {
+                    "total_files": len(items),
+                    "documents": len(documents),
+                    "images": len(images),
+                    "videos": len(videos),
+                    "audio": len(audio),
+                    "archives": len(archives),
+                    "other": len(other),
+                    "total_size": total_size,
+                    "total_size_readable": total_size_str
+                },
+                "files_by_type": {
+                    "documents": documents,
+                    "images": images,
+                    "videos": videos,
+                    "audio": audio,
+                    "archives": archives,
+                    "other": other
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing files: {e}")
+            return {"success": False, "error": str(e)}
+
 # Singleton instance
 desktop_executor = DesktopExecutor()

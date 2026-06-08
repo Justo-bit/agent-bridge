@@ -667,8 +667,32 @@ async def execute_task(request: OrchestrationRequest):
             actions.append("screenshot")
             results.append(screenshot_result)
 
+        # File listing request (triggered by: how many, count, list, show, what files)
+        list_keywords = ['how many', 'count', 'list', 'show', 'what files', 'files in', 'documents in', 'number of']
+        is_listing_request = any(keyword in prompt for keyword in list_keywords)
+        logger.debug(f"🔍 Checking if listing request: {is_listing_request}, prompt='{prompt[:50]}'")
+
+        if is_listing_request:
+            # This is a file listing request, not a download
+            folder_query = prompt
+
+            # Determine which folder to list
+            if 'downloads' in folder_query or 'download folder' in folder_query:
+                folder_path = '~/Downloads'
+            elif 'desktop' in folder_query:
+                folder_path = '~/Desktop'
+            elif 'documents' in folder_query:
+                folder_path = '~/Documents'
+            else:
+                folder_path = '~/Downloads'  # Default to Downloads
+
+            logger.info(f"📁 File listing request: {folder_path}")
+            list_result = desktop_executor.list_files(folder_path)
+            actions.append("list_files")
+            results.append(list_result)
+
         # Download request (triggered by: download, save, get, fetch, retrieve)
-        if any(word in prompt for word in ['download', 'save', 'get', 'fetch', 'retrieve', 'paste']):
+        elif any(word in prompt for word in ['download', 'save', 'fetch', 'retrieve', 'paste']):
             if 'junam' in prompt.lower():
                 download_result = desktop_executor.download_image(
                     "Junam logo",
